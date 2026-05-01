@@ -58,6 +58,8 @@
 #define FLASH_DATA_START          4096
 #define FLASH_MAX_BYTES           3200000UL
 #define FLASH_WARN_THRESHOLD      (FLASH_MAX_BYTES * 9 / 10)
+#define MAX_HEADER_SLOTS          511   // usable offset slots in Half 1
+#define MAX_CONFIG_SLOTS          102   // usable config slots in Half 2
 
 // ── Thresholds ────────────────────────────────────────────────────────────────
 #define DEFAULT_TREMOR_THRESHOLD  100.0f
@@ -978,7 +980,7 @@ static void flashRefreshSector0WithState() {
 void flashSaveOffsetHeader() {
   if (!dataPartition) return;
 
-  if (header_slot_index >= 511) {
+  if (header_slot_index >= MAX_HEADER_SLOTS) {
     flashRefreshSector0WithState();
     return; // both slots already written by flashRefreshSector0WithState
   }
@@ -991,7 +993,7 @@ void flashSaveOffsetHeader() {
 void flashSaveConfig() {
   if (!dataPartition) return;
 
-  if (config_slot_index >= 102) {
+  if (config_slot_index >= MAX_CONFIG_SLOTS) {
     flashRefreshSector0WithState();
     return; // config already written by flashRefreshSector0WithState
   }
@@ -1023,7 +1025,7 @@ void flashLoadConfig() {
   best.valid = 0;
   uint16_t bestIdx = 0;
 
-  for (uint16_t i = 1; i <= 102; i++) {
+  for (uint16_t i = 1; i <= MAX_CONFIG_SLOTS; i++) {
     ConfigSlot cs;
     uint32_t off = FLASH_CONFIG_HDR_START + 4 + (i - 1) * 20;
     esp_partition_read(dataPartition, off, &cs, sizeof(ConfigSlot));
@@ -1082,7 +1084,7 @@ void flashInit() {
     // Scan offset slots 1–511
     uint32_t last_valid_offset = FLASH_DATA_START;
     header_slot_index = 1;
-    for (uint16_t i = 1; i <= 511; i++) {
+    for (uint16_t i = 1; i <= MAX_HEADER_SLOTS; i++) {
       uint32_t val = 0;
       esp_partition_read(dataPartition,
                          FLASH_OFFSET_HDR_START + i * 4, &val, 4);
@@ -1864,12 +1866,9 @@ void loop() {
   }
 
   // ── 10ms Sampling Wait Throttle (non-blocking) ────────────────────────────
-  if (millis() - lastReadTime < SAMPLE_INTERVAL_MS) {
-    // Not time yet — skip sensor read but still run Streams 2 & 3
-    goto stream3;
-  }
+  bool doSample = (millis() - lastReadTime >= SAMPLE_INTERVAL_MS);
 
-  {
+  if (doSample) {
     // Read BMA423 accelerometer
     Accel acc;
     if (sensor->getAccel(acc)) {
@@ -1919,9 +1918,7 @@ void loop() {
     // Tremor Onset
     if (current_tremor_state && !prev_tremor_state && !inTremorWindow) {
       // Flush any partial buffer on the active path
-      if (currentMode == MODE_ANXIETY && wasConnected) {
-        // B2 path — no partial flush needed (records are added one by one)
-      } else {
+      if (!(currentMode == MODE_ANXIETY && wasConnected)) {
         flashFlushPartialB1();
       }
 
@@ -1937,7 +1934,7 @@ void loop() {
         b1AddMarker(MARKER_TREMOR_START_H1, MARKER_TREMOR_START_H2, NULL, 0);
       }
 
-      inTremorWindow     = true;
+      inTremorWindow      = true;
       tremorWindowStartMs = millis();
       bleStartTime        = tremorWindowStartMs;
       tremor_data_count   = 1;
@@ -1997,7 +1994,6 @@ void loop() {
     }
   }
 
-stream3:
   // ══════════════════════════════════════════════════════════════════════════
   // STREAM 3: Sync & Flash Tasks (unconditional)
   // ══════════════════════════════════════════════════════════════════════════
