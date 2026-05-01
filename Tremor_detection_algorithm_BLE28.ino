@@ -1902,10 +1902,10 @@ void loop() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // STREAM 2: Mode-Aware Output (runs when circular buffer is filled)
+  // STREAM 2: Mode-Aware Output (runs once per 10ms sample, after buffer fills)
   // ══════════════════════════════════════════════════════════════════════════
 
-  if (bufferFilled) {
+  if (doSample && bufferFilled) {
     // Tremor detection — runs ALWAYS regardless of mode or connection
     float Amag_Baseline = calculateBaseline(Accel_Mag, currentTime);
     crossingCount_Amag  = countCrossings(Accel_Mag, Amag_Baseline,
