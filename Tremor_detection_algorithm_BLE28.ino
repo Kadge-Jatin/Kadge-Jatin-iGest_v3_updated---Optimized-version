@@ -1532,6 +1532,19 @@ void syncStep() {
       syncState   = SYNC_IDLE;
       forceRedraw = true;
       Serial.printf("SYNC: Complete — sync_read=0x%lX\n", sync_read_offset);
+
+      // Tremor post-sync erase: if recording was paused because flash was
+      // full, now that all data has been synced, erase and start fresh.
+      // Uses the same background task (and pointer resets) as the anxiety path.
+      if (flash_recording_paused && flash_full && !flash_erase_in_progress) {
+        flash_recording         = false;
+        flash_erase_in_progress = true;
+        b1_fill                 = 0;
+        showFlashWarningOnTFT("ERASING...");
+        Serial.println("FLASH: TREMOR post-sync erase starting");
+        xTaskCreatePinnedToCore(flashEraseTask, "flashErase",
+                                4096, NULL, 1, NULL, 1);
+      }
       break;
   }
 }
